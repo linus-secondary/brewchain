@@ -131,11 +131,3 @@ kubectl exec -it -n brewchain statefulset/postgres -- psql -U brew brewchain    
 | Pods `CrashLoopBackOff`, log says "waiting for database" | Database not ready or wrong DATABASE_URL secret |
 | AWS URL does not open | NLB DNS takes 2-3 minutes after it appears |
 | Phone cannot reach laptop | Same Wi-Fi? Firewall allowed? Used `--address 0.0.0.0`? |
-
-## Contributors
-
-BrewChain was built as a team project for the MACSE512 Operating Systems course at VIT Chennai (SCOPE) by:
-
-- Linus Edric
-- Karthik Raktate
-- Naveen M
