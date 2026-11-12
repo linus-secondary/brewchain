@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BrewChain - Order Ahead</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>&#9749; BrewChain <span id="modeLabel" style="font-size:14px;font-weight:normal">Order ahead</span></h1>
+  <nav><a href="/">Order</a><a href="/staff.html">Staff</a><a href="/admin.html">Admin</a></nav>
+</header>
+<main>
+  <div id="msg"></div>
+
+  <!-- Step 1: who are you -->
+  <section class="card" id="step1">
+    <h2>1. Your details</h2>
+    <div class="row">
+      <div><label>Phone number</label><input id="phone" placeholder="9876543210" inputmode="tel"></div>
+      <div><label>Name</label><input id="name" placeholder="Your name"></div>
+      <div><label>Dietary needs (pick or type)</label>
+        <input id="diet" list="dietList" value="None">
+        <datalist id="dietList">
+          <option>None</option><option>No Sugar</option><option>Mild Sugar</option><option>Extra Sugar</option>
+          <option>Lactose Free (Oat Milk)</option><option>Nut Allergy</option><option>Gluten Free</option>
+          <option>Vegan</option><option>Decaf</option>
+        </datalist>
+      </div>
+    </div>
+    <p><button onclick="signIn()">Continue</button></p>
+  </section>
+
+  <!-- Membership card -->
+  <section class="card hidden" id="member">
+    <h2>Your membership</h2>
+    <div id="memberInfo"></div>
+  </section>
+
+  <!-- Step 2: shop + menu -->
+  <section class="card hidden" id="step2">
+    <h2>2. Pick a shop and your drinks</h2>
+    <label>Shop</label>
+    <select id="shop" onchange="loadMenu()"></select>
+    <div id="menu" class="menu-grid" style="margin-top:12px"></div>
+  </section>
+
+  <!-- Step 3: pickup + pay -->
+  <section class="card hidden" id="step3">
+    <h2>3. Pickup and bill</h2>
+    <div class="row">
+      <div id="pickupBox"><label>Pickup time</label>
+        <select id="pickupMode" onchange="document.getElementById('pickupTime').classList.toggle('hidden', this.value !== 'later')">
+          <option value="asap">As soon as possible</option><option value="later">Choose a time</option>
+        </select>
+        <input id="pickupTime" type="time" class="hidden" style="margin-top:6px">
+      </div>
+      <div><label>Loyalty points</label>
+        <select id="redeem" onchange="renderBill()"><option value="0">Don't use points</option><option value="1">Use my points (up to 50% of bill)</option></select>
+      </div>
+    </div>
+    <div id="bill" style="margin-top:12px"></div>
+    <p><button id="placeBtn" onclick="placeOrder()">Place order</button></p>
+  </section>
+
+  <!-- Result -->
+  <section class="card hidden" id="result"></section>
+</main>
+<footer>Served by Kubernetes pod: <b id="pod">-</b></footer>
+
+<script src="api.js"></script>
+<script>
+const params = new URLSearchParams(location.search);
+const WALKIN = params.get("mode") === "walkin";
+let customer = null, menuItems = [], cart = {}, trackTimer = null;
+
+if (WALKIN) {
+  document.getElementById("modeLabel").textContent = "Walk-in order (staff)";
+  document.getElementById("pickupBox").classList.add("hidden");
+}
+document.getElementById("phone").value = store("phone") || "";
+document.getElementById("name").value = store("name") || "";
+
+function showMsg(text, cls = "error") {
+  document.getElementById("msg").innerHTML = text ? `<div class="${cls}">${esc(text)}</div>` : "";
+}
+
+async function signIn() {
+  showMsg("");
+  const body = {
+    phone: document.getElementById("phone").value.trim(),
+    name: document.getElementById("name").value.trim(),
+    dietary_notes: document.getElementById("diet").value.trim() || "None",
+  };
+  try {
+    customer = await api("loyalty/customers", { method: "POST", body });
+    if (!WALKIN) { store("phone", body.phone); store("name", body.name); }
+    renderMember();
+    if (customer.is_new) showMsg("Welcome to BrewChain! You got " + 50 + " bonus points.", "ok");
+    await loadShops();
+  } catch (e) { showMsg(e.message); }
+}
+
+function renderMember() {
+  const c = customer;
+  document.getElementById("member").classList.remove("hidden");
+  document.getElementById("memberInfo").innerHTML = `
+    <p><b>${esc(c.name)}</b> <span class="badge ${c.tier}">${c.tier}</span>
+    &nbsp; Points: <b>${c.points}</b> &nbsp; <span class="muted">Dietary: ${esc(c.dietary_notes)}</span></p>
+    <p class="muted">${c.discount_pct}% member discount, ${c.points_multiplier}x points.
+    ${c.next_tier ? `${c.points_to_next_tier} more lifetime points to reach ${c.next_tier}.` : "Top tier reached!"}</p>`;
+}
+
+async function loadShops() {
+  const data = await api("menu/shops");
+  const sel = document.getElementById("shop");
+  sel.innerHTML = data.shops.map(s => `<option value="${s.shop_id}">${esc(s.name)} - ${esc(s.area)}</option>`).join("");
+  if (params.get("shop")) sel.value = params.get("shop");
+  else if (store("shop")) sel.value = store("shop");
+  document.getElementById("step2").classList.remove("hidden");
+  document.getElementById("step3").classList.remove("hidden");
+  await loadMenu();
+}
+
+async function loadMenu() {
+  const shopId = document.getElementById("shop").value;
+  store("shop", shopId);
+  cart = {};
+  const data = await api("menu/menu?shop_id=" + shopId);
+  menuItems = data.items;
+  renderMenu();
+}
+
+function renderMenu() {
+  document.getElementById("menu").innerHTML = menuItems.map(i => `
+    <div class="item ${i.in_stock === 0 ? "soldout" : ""}">
+      <div class="name">${esc(i.name)}</div>
+      <div class="muted">${esc(i.category)} &middot; ${rs(i.price)} &middot; ${i.in_stock === 0 ? "Sold out" : i.in_stock + " left"}</div>
+      <div class="qty">
+        <button class="small light" onclick="change(${i.item_id}, -1)">-</button>
+        <span>${cart[i.item_id] || 0}</span>
+        <button class="small" onclick="change(${i.item_id}, 1)" ${i.in_stock === 0 ? "disabled" : ""}>+</button>
+      </div>
+    </div>`).join("");
+  renderBill();
+}
+
+function change(id, d) {
+  const item = menuItems.find(i => i.item_id === id);
+  const q = Math.max(0, Math.min((cart[id] || 0) + d, item.in_stock, 20));
+  if (q === 0) delete cart[id]; else cart[id] = q;
+  renderMenu();
+}
+
+function billNumbers() {
+  const lines = menuItems.filter(i => cart[i.item_id]).map(i => ({ ...i, q: cart[i.item_id] }));
+  const subtotal = lines.reduce((s, l) => s + l.price * l.q, 0);
+  const discount = Math.round(subtotal * customer.discount_pct) / 100;
+  const after = subtotal - discount;
+  const usePoints = document.getElementById("redeem").value === "1";
+  const points = usePoints ? Math.min(customer.points, Math.floor(after * 0.5)) : 0;
+  return { lines, subtotal, discount, points, total: after - points };
+}
+
+function renderBill() {
+  if (!customer) return;
+  const b = billNumbers();
+  document.getElementById("bill").innerHTML = b.lines.length === 0 ? `<p class="muted">Add some drinks above.</p>` :
+    b.lines.map(l => `<div class="total-line"><span>${esc(l.name)} x${l.q}</span><span>${rs(l.price * l.q)}</span></div>`).join("") +
+    `<hr><div class="total-line"><span>Subtotal</span><span>${rs(b.subtotal)}</span></div>` +
+    (b.discount ? `<div class="total-line"><span>${customer.tier} discount (${customer.discount_pct}%)</span><span>- ${rs(b.discount)}</span></div>` : "") +
+    (b.points ? `<div class="total-line"><span>Points used (${b.points})</span><span>- ${rs(b.points)}</span></div>` : "") +
+    `<div class="total-line big"><span>Total</span><span>${rs(b.total)}</span></div>`;
+}
+
+async function placeOrder() {
+  showMsg("");
+  const b = billNumbers();
+  if (b.lines.length === 0) return showMsg("Your cart is empty");
+  let pickup_at = null;
+  if (!WALKIN && document.getElementById("pickupMode").value === "later") {
+    const t = document.getElementById("pickupTime").value;
+    if (!t) return showMsg("Choose a pickup time");
+    const d = new Date(); const [h, m] = t.split(":"); d.setHours(+h, +m, 0, 0);
+    pickup_at = d.toISOString();
+  }
+  const btn = document.getElementById("placeBtn");
+  btn.disabled = true;
+  try {
+    const order = await api("orders/orders", { method: "POST", body: {
+      shop_id: +document.getElementById("shop").value,
+      phone: customer.phone, name: customer.name, dietary_notes: customer.dietary_notes,
+      items: b.lines.map(l => ({ item_id: l.item_id, quantity: l.q })),
+      order_type: WALKIN ? "WALK_IN" : "PREORDER",
+      pickup_at, redeem_points: b.points,
+    }});
+    showResult(order);
+    customer = await api("loyalty/customers/" + encodeURIComponent(customer.phone));
+    renderMember();
+    await loadMenu();
+  } catch (e) { showMsg(e.message); await loadMenu(); }
+  btn.disabled = false;
+}
+
+function showResult(o) {
+  const box = document.getElementById("result");
+  box.classList.remove("hidden");
+  box.innerHTML = `
+    <h2>Order #${o.order_id} confirmed</h2>
+    ${o.tier_upgraded ? `<div class="ok">Congratulations! You are now a <b>${o.tier}</b> member.</div>` : ""}
+    <p class="big">Ready by ${timeOf(o.ready_at)} <span class="muted">(about ${o.minutes_until_ready} min)</span></p>
+    <p>Position in queue: <b>${o.queue_position}</b> &nbsp; Orders ahead of you: <b>${o.queue_position - 1}</b></p>
+    ${o.items.map(i => `<div class="total-line"><span>${esc(i.name)} x${i.quantity}</span><span>${rs(i.price * i.quantity)}</span></div>`).join("")}
+    <hr>
+    ${o.discount ? `<div class="total-line"><span>Member discount</span><span>- ${rs(o.discount)}</span></div>` : ""}
+    ${o.points_redeemed ? `<div class="total-line"><span>Points used</span><span>- ${rs(o.points_redeemed)}</span></div>` : ""}
+    <div class="total-line big"><span>Total paid</span><span>${rs(o.total)}</span></div>
+    <p>Points earned: <b>+${o.points_earned}</b> &nbsp; Balance: <b>${o.points_balance}</b> &nbsp; Dietary: <b>${esc(o.dietary_notes)}</b></p>
+    <div class="steps" id="steps"></div>
+    <p class="muted">Order handled by pod <b>${esc(o.served_by)}</b>. This page updates by itself.</p>`;
+  box.scrollIntoView({ behavior: "smooth" });
+  clearInterval(trackTimer);
+  const track = async () => {
+    try {
+      const cur = await api("orders/orders/" + o.order_id);
+      const order = ["RECEIVED", "PREPARING", "READY", "COLLECTED"];
+      const idx = order.indexOf(cur.status);
+      document.getElementById("steps").innerHTML = cur.status === "CANCELLED" ? `<div>Cancelled</div>` :
+        order.map((s, i) => `<div class="${i <= idx ? "done" : ""}">${s}</div>`).join("");
+      if (cur.status === "COLLECTED" || cur.status === "CANCELLED") clearInterval(trackTimer);
+    } catch (e) { /* keep trying */ }
+  };
+  track();
+  trackTimer = setInterval(track, 5000);
+}
+</script>
+</body>
+</html>

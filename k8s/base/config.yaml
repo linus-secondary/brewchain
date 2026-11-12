@@ -1,0 +1,10 @@
+# Settings shared by all services (not secret)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: brewchain-config
+data:
+  MENU_URL: http://menu-inventory:8000
+  ORDERS_URL: http://orders:8000
+  LOYALTY_URL: http://loyalty:8000
+  DB_POOL_SIZE: "3"

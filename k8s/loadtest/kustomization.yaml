@@ -1,0 +1,11 @@
+# Start the load generator:  kubectl apply -k k8s/loadtest
+# Remove it:                 kubectl delete -k k8s/loadtest
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: brewchain
+resources:
+  - locust.yaml
+configMapGenerator:
+  - name: locust-script
+    files:
+      - locustfile.py

@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Secrets and local settings, never commit these
+.env
+*.env
+*.pem
+*.key
+.aws/
+credentials
+*.csv
+
+# Local databases and backups
+*.db
+*.sqlite
+*.sql.bak
+brewchain_backup.sql
+
+# Editor, OS and temp files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.bak
+*.log
+
+# Packaged copies of the project
+*.zip

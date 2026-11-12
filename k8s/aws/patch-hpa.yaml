@@ -1,0 +1,8 @@
+# On AWS: keep 2 of each pod for high availability, allow up to 6
+# (3 database services x 6 pods x 3 connections = 54, under the small RDS limit)
+- op: replace
+  path: /spec/minReplicas
+  value: 2
+- op: replace
+  path: /spec/maxReplicas
+  value: 6

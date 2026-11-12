@@ -1,0 +1,11 @@
+# On AWS: run app pods on the brewchain node pool and give each a bit more CPU
+- op: add
+  path: /spec/template/spec/nodeSelector
+  value:
+    karpenter.sh/nodepool: brewchain
+- op: replace
+  path: /spec/template/spec/containers/0/resources/requests/cpu
+  value: 250m
+- op: replace
+  path: /spec/template/spec/containers/0/resources/limits/cpu
+  value: "1"

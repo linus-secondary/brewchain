@@ -1,0 +1,17 @@
+# AWS EKS:  scripts/aws-up.sh fills in the image name, creates the db-credentials
+# secret and applies nodepool.yaml (cluster-wide, so it is kept outside this list)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: brewchain
+resources:
+  - ../base
+patches:
+  - path: patch-gateway-lb.yaml
+  - path: patch-pods.yaml
+    target: { kind: Deployment }
+  - path: patch-hpa.yaml
+    target: { kind: HorizontalPodAutoscaler }
+images:
+  - name: brewchain
+    newName: ACCOUNT_ID.dkr.ecr.ap-south-1.amazonaws.com/brewchain   # filled in by scripts/aws-up.sh; never commit your real account id
+    newTag: "1.0"

@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BrewChain - Chain Dashboard</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>&#9749; BrewChain Chain Dashboard</h1>
+  <nav><a href="/">Order</a><a href="/staff.html">Staff</a><a href="/admin.html">Admin</a></nav>
+</header>
+<main>
+  <div id="msg"></div>
+  <div class="kpis">
+    <div class="kpi"><div class="v" id="kOrders">-</div><div class="l">Orders today</div></div>
+    <div class="kpi"><div class="v" id="kRevenue">-</div><div class="l">Revenue today</div></div>
+    <div class="kpi"><div class="v" id="kQueue">-</div><div class="l">Orders in queue now</div></div>
+    <div class="kpi"><div class="v" id="kMembers">-</div><div class="l">Loyalty members</div></div>
+    <div class="kpi"><div class="v" id="kLow">-</div><div class="l">Low-stock items</div></div>
+  </div>
+
+  <div class="row">
+    <div class="card">
+      <h2>Shops today</h2>
+      <table><thead><tr><th>Shop</th><th>Orders</th><th>Preorders</th><th>In queue</th><th>Revenue</th></tr></thead>
+      <tbody id="shops"></tbody></table>
+    </div>
+    <div class="card">
+      <h2>Pods that handled orders (last 2 min)</h2>
+      <p class="muted">When load rises, Kubernetes adds pods and new names appear here.</p>
+      <div id="pods"></div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="card">
+      <h2>Orders per minute (last 10 min)</h2>
+      <div id="perMinute"></div>
+    </div>
+    <div class="card">
+      <h2>Top loyalty members</h2>
+      <table><thead><tr><th>Name</th><th>Tier</th><th>Points</th><th>Lifetime</th></tr></thead>
+      <tbody id="members"></tbody></table>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Low stock across the chain</h2>
+    <p><button class="light" onclick="resetStock()">Refill all shops (demo)</button></p>
+    <table><thead><tr><th>Shop</th><th>Item</th><th>Left</th><th>Reorder at</th></tr></thead>
+    <tbody id="low"></tbody></table>
+  </div>
+</main>
+<footer>Served by Kubernetes pod: <b id="pod">-</b> &middot; refreshes every 3 seconds</footer>
+
+<script src="api.js"></script>
+<script>
+function bars(rows, label, value) {
+  const max = Math.max(1, ...rows.map(r => r[value]));
+  return rows.length === 0 ? `<p class="muted">No orders yet</p>` : rows.map(r => `
+    <div class="total-line"><span>${esc(r[label])}</span><b>${r[value]}</b></div>
+    <div class="bar"><div style="width:${(100 * r[value] / max).toFixed(0)}%"></div></div>`).join("");
+}
+
+async function refresh() {
+  try {
+    const [s, top, low] = await Promise.all([
+      api("orders/stats"), api("loyalty/members/top?limit=5"), api("menu/inventory/low-stock"),
+    ]);
+    document.getElementById("kOrders").textContent = s.orders_today;
+    document.getElementById("kRevenue").textContent = rs(s.revenue_today);
+    document.getElementById("kQueue").textContent = s.in_queue;
+    document.getElementById("kMembers").textContent = s.members;
+    document.getElementById("kLow").textContent = s.low_stock_items;
+    document.getElementById("shops").innerHTML = s.shops.map(x =>
+      `<tr><td>${esc(x.shop)}</td><td>${x.orders}</td><td>${x.preorders}</td><td>${x.in_queue}</td><td>${rs(x.revenue)}</td></tr>`).join("");
+    document.getElementById("pods").innerHTML = bars(s.order_pods_last_2_min, "pod", "orders");
+    document.getElementById("perMinute").innerHTML = bars(s.orders_per_minute, "minute", "orders");
+    document.getElementById("members").innerHTML = top.map(m =>
+      `<tr><td>${esc(m.name)}</td><td><span class="badge ${m.tier}">${m.tier}</span></td><td>${m.points}</td><td>${m.lifetime_points}</td></tr>`).join("");
+    document.getElementById("low").innerHTML = low.items.length === 0 ? `<tr><td colspan="4" class="muted">All shops are well stocked</td></tr>` :
+      low.items.slice(0, 15).map(i => `<tr class="low"><td>${esc(i.shop)}</td><td>${esc(i.item)}</td><td>${i.quantity}</td><td>${i.reorder_level}</td></tr>`).join("");
+    document.getElementById("msg").innerHTML = "";
+  } catch (e) {
+    document.getElementById("msg").innerHTML = `<div class="error">${esc(e.message)}</div>`;
+  }
+}
+
+async function resetStock() {
+  const r = await api("menu/inventory/reset-demo", { method: "POST" });
+  alert("Refilled " + r.restocked + " items");
+  refresh();
+}
+
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>

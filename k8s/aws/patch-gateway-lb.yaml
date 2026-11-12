@@ -1,0 +1,7 @@
+# Make the Network Load Balancer public so phones can reach it
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing

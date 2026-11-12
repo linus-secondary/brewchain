@@ -1,0 +1,17 @@
+# Local cluster (minikube):  kubectl apply -k k8s/local
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: brewchain
+resources:
+  - ../base
+  - postgres.yaml
+  - db-secret.yaml
+patches:
+  - path: patch-pods.yaml
+    target: { kind: Deployment }
+  - path: patch-hpa.yaml
+    target: { kind: HorizontalPodAutoscaler }
+images:
+  - name: brewchain
+    newName: brewchain
+    newTag: "1.0"

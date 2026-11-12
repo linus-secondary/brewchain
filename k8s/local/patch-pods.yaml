@@ -1,0 +1,8 @@
+# Laptop-sized pods (fits a 2-core machine). Small CPU requests also mean
+# autoscaling triggers easily, even with a modest load test.
+- op: replace
+  path: /spec/template/spec/containers/0/resources/requests/cpu
+  value: 50m
+- op: replace
+  path: /spec/template/spec/containers/0/resources/limits/cpu
+  value: 300m

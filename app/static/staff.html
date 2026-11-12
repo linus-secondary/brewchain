@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BrewChain - Staff</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>&#9749; BrewChain Staff</h1>
+  <nav><a href="/">Order</a><a href="/staff.html">Staff</a><a href="/admin.html">Admin</a></nav>
+</header>
+<main>
+  <div class="card">
+    <div class="row" style="align-items:flex-end">
+      <div><label>Shop</label><select id="shop" onchange="refresh()"></select></div>
+      <div><button onclick="location.href='/?mode=walkin&shop=' + shopId()">+ New walk-in order</button></div>
+    </div>
+  </div>
+  <div id="msg"></div>
+
+  <div class="cols">
+    <div class="card"><h2>Received</h2><div id="RECEIVED"></div></div>
+    <div class="card"><h2>Preparing</h2><div id="PREPARING"></div></div>
+    <div class="card"><h2>Ready for pickup</h2><div id="READY"></div></div>
+  </div>
+
+  <div class="card">
+    <h2>Inventory at this shop</h2>
+    <p class="muted">Red rows are below the reorder level.</p>
+    <table><thead><tr><th>Item</th><th>Category</th><th>In stock</th><th>Reorder at</th><th></th></tr></thead>
+    <tbody id="inv"></tbody></table>
+  </div>
+</main>
+<footer>Served by Kubernetes pod: <b id="pod">-</b> &middot; refreshes every 4 seconds</footer>
+
+<script src="api.js"></script>
+<script>
+const NEXT = { RECEIVED: "PREPARING", PREPARING: "READY", READY: "COLLECTED" };
+const shopId = () => document.getElementById("shop").value;
+
+async function init() {
+  const data = await api("menu/shops");
+  const sel = document.getElementById("shop");
+  sel.innerHTML = data.shops.map(s => `<option value="${s.shop_id}">${s.name}</option>`).join("");
+  if (store("staffShop")) sel.value = store("staffShop");
+  refresh();
+  setInterval(refresh, 4000);
+}
+
+async function refresh() {
+  store("staffShop", shopId());
+  try {
+    const [orders, inv] = await Promise.all([
+      api("orders/orders?shop_id=" + shopId()),
+      api("menu/inventory/" + shopId()),
+    ]);
+    for (const status of ["RECEIVED", "PREPARING", "READY"]) {
+      const list = orders.orders.filter(o => o.status === status);
+      document.getElementById(status).innerHTML = list.length === 0 ? `<p class="muted">None</p>` : list.map(o => `
+        <div class="ocard">
+          <b>#${o.order_id}</b> ${esc(o.customer)} <span class="muted">${o.order_type === "PREORDER" ? "Preorder" : "Walk-in"}</span>
+          <div>${esc(o.items)}</div>
+          ${o.dietary_notes && o.dietary_notes !== "None" ? `<div class="diet">&#9888; ${esc(o.dietary_notes)}</div>` : ""}
+          <div class="muted">Ready by ${timeOf(o.ready_at)}${o.pickup_at ? " &middot; pickup " + timeOf(o.pickup_at) : ""} &middot; ${rs(o.total)}</div>
+          <p style="margin:6px 0 0">
+            <button class="small" onclick="setStatus(${o.order_id}, '${NEXT[status]}')">Mark ${NEXT[status].toLowerCase()}</button>
+            ${status !== "READY" ? `<button class="small danger" onclick="setStatus(${o.order_id}, 'CANCELLED')">Cancel</button>` : ""}
+          </p>
+        </div>`).join("");
+    }
+    document.getElementById("inv").innerHTML = inv.items.map(i => `
+      <tr class="${i.low ? "low" : ""}"><td>${esc(i.name)}</td><td>${esc(i.category)}</td><td><b>${i.quantity}</b></td>
+      <td>${i.reorder_level}</td><td><button class="small light" onclick="restock(${i.item_id})">+50</button></td></tr>`).join("");
+    document.getElementById("msg").innerHTML = "";
+  } catch (e) {
+    document.getElementById("msg").innerHTML = `<div class="error">${esc(e.message)}</div>`;
+  }
+}
+
+async function setStatus(id, status) {
+  if (status === "CANCELLED" && !confirm("Cancel order #" + id + "? Stock and points will be returned.")) return;
+  try { await api(`orders/orders/${id}/status`, { method: "PATCH", body: { status } }); }
+  catch (e) { alert(e.message); }
+  refresh();
+}
+
+async function restock(itemId) {
+  await api(`menu/inventory/${shopId()}/restock`, { method: "POST", body: { item_id: itemId, quantity: 50 } });
+  refresh();
+}
+
+init();
+</script>
+</body>
+</html>

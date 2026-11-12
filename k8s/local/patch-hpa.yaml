@@ -1,0 +1,4 @@
+# Laptop: scale between 1 and 4 pods per service
+- op: replace
+  path: /spec/maxReplicas
+  value: 4

@@ -1,0 +1,41 @@
+# Locust load generator running INSIDE the cluster.
+# Open its web page with:  kubectl port-forward -n brewchain svc/locust 8089:8089
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: locust
+  labels: { app: locust }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: locust }
+  template:
+    metadata:
+      labels: { app: locust }
+    spec:
+      containers:
+        - name: locust
+          image: locustio/locust:2.37.0
+          args: ["-f", "/mnt/locust/locustfile.py", "--host", "http://gateway.brewchain.svc.cluster.local"]
+          ports:
+            - containerPort: 8089
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits:   { cpu: 500m, memory: 512Mi }
+          volumeMounts:
+            - name: script
+              mountPath: /mnt/locust
+      volumes:
+        - name: script
+          configMap:
+            name: locust-script
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: locust
+spec:
+  selector: { app: locust }
+  ports:
+    - port: 8089
+      targetPort: 8089

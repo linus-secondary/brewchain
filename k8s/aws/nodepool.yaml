@@ -1,0 +1,32 @@
+# EKS Auto Mode node pool for BrewChain pods.
+# Small 2-vCPU on-demand nodes, so you can SEE new EC2 nodes appear when pods scale out.
+# limits.cpu caps the pool at 6 nodes = a hard ceiling on cost.
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: brewchain
+spec:
+  template:
+    spec:
+      nodeClassRef:
+        group: eks.amazonaws.com
+        kind: NodeClass
+        name: default
+      requirements:
+        - key: eks.amazonaws.com/instance-category
+          operator: In
+          values: ["c", "m"]
+        - key: eks.amazonaws.com/instance-cpu
+          operator: In
+          values: ["2"]
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["amd64"]
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["on-demand"]
+  limits:
+    cpu: "12"
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 60s       # remove spare nodes 1 minute after the rush

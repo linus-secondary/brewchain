@@ -1,0 +1,41 @@
+# Quick check WITHOUT Kubernetes:  docker compose up --build   then open http://localhost:8080
+# (Same image and database as the cluster, just no autoscaling.)
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: brew
+      POSTGRES_PASSWORD: brew-local-pass
+      POSTGRES_DB: brewchain
+    command: ["-c", "max_connections=200"]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "brew", "-d", "brewchain"]
+      interval: 3s
+      retries: 20
+
+  menu-inventory:
+    build: ./app
+    image: brewchain:1.0
+    environment: &env
+      DATABASE_URL: postgresql://brew:brew-local-pass@postgres:5432/brewchain
+      MENU_URL: http://menu-inventory:8000
+      ORDERS_URL: http://orders:8000
+      LOYALTY_URL: http://loyalty:8000
+      SERVICE: menu
+    depends_on: { postgres: { condition: service_healthy } }
+
+  orders:
+    image: brewchain:1.0
+    environment: { <<: *env, SERVICE: orders }
+    depends_on: [menu-inventory]
+
+  loyalty:
+    image: brewchain:1.0
+    environment: { <<: *env, SERVICE: loyalty }
+    depends_on: [menu-inventory]
+
+  gateway:
+    image: brewchain:1.0
+    environment: { <<: *env, SERVICE: gateway }
+    ports: ["8080:8000"]
+    depends_on: [orders, loyalty]
